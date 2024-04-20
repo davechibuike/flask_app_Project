@@ -1,0 +1,82 @@
+---
+- name: Configure Flask on CentOS EC2 instances
+  hosts: g1
+  become: yes
+  vars:
+    app_directory: /home/centos/ansible-flask
+    git_repo_url: https://github.com/chikababy/flask-project.git
+  tasks:
+    - name: Update package cache
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install git
+      yum:
+        name: git
+        state: present
+
+    - name: Create ansible-flask directory if it doesn't exist
+      ansible.builtin.file:
+        path: "{{ app_directory }}"
+        state: directory
+        mode: '0755'
+      become_user: centos
+
+    - name: Clone GitHub repository
+      git:
+        repo: "{{ git_repo_url }}"
+        dest: "{{ app_directory }}/repository"
+      become_user: centos
+
+    - name: Update repositories and install Python
+      yum:
+        name: python3
+        state: present
+
+    - name: Install pip (Python package manager)
+      yum:
+        name: python3-pip
+        state: present
+
+    - name: Install virtualenv package
+      pip:
+        name: virtualenv
+        executable: pip3
+        state: present
+
+    - name: Create a virtual environment
+      command: virtualenv -p python3 venv
+      args:
+        chdir: "{{ app_directory }}/repository"
+      become_user: centos
+
+    - name: Activate the virtual environment
+      shell:
+       cmd: "source {{ app_directory }}/repository/venv/bin/activate && python --version"
+      become_user: centos
+
+
+    - name: Install Flask within the virtual environment
+      pip:
+        name: flask
+        executable: pip3
+        state: present
+
+    - name: Run Flask app
+      command: nohup python3 app.py &
+      async: 60
+      poll: 0
+      args:
+        chdir: "{{ app_directory }}/repository"
+      become_user: centos
+
+    - name: Get the PID of the Flask app
+      shell: "ps aux | grep 'python3 app.py' | grep -v grep | awk '{print $2}'"
+      register: flask_pid
+      ignore_errors: yes
+
+    - name: Stop Flask app after 2400 seconds
+      shell: "sleep 240 && kill -TERM {{ flask_pid.stdout }}"
+      ignore_errors: yes
+        
